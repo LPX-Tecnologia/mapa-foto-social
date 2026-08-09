@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Mapa Vivo — fotos e pessoas no seu mapa</title>
+<meta name="description" content="Registre fotos por localização, veja o clima do momento e conecte-se com pessoas pelo mapa." />
+
+<!-- Leaflet (mapa, sem necessidade de chave de API) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ===================== TELA DE AUTENTICAÇÃO ===================== -->
+<div id="auth-screen" class="screen">
+  <div class="auth-card">
+    <div class="brand">
+      <span class="brand-mark">◎</span>
+      <h1 data-i18n="brandName">Mapa Vivo</h1>
+    </div>
+    <p class="brand-tag" data-i18n="brandTag">Cada foto tem um lugar. Cada lugar tem uma história.</p>
+
+    <div id="auth-login" class="auth-form">
+      <input type="email" id="login-email" placeholder="E-mail" autocomplete="username" />
+      <input type="password" id="login-password" placeholder="Senha" autocomplete="current-password" data-i18n-ph="password" />
+      <button class="btn-primary" id="btn-login" data-i18n="login">Entrar</button>
+      <button class="btn-ghost" id="goto-signup" data-i18n="noAccount">Criar conta nova</button>
+      <p class="auth-error" id="login-error"></p>
+    </div>
+
+    <div id="auth-signup" class="auth-form hidden">
+      <input type="text" id="signup-name" placeholder="Nome de exibição" data-i18n-ph="displayName" />
+      <input type="email" id="signup-email" placeholder="E-mail" />
+      <input type="password" id="signup-password" placeholder="Senha (mín. 6 caracteres)" data-i18n-ph="passwordMin" />
+      <label class="file-pick">
+        <input type="file" id="signup-photo" accept="image/*" hidden />
+        <span data-i18n="choosePhoto">Escolher foto de perfil</span>
+      </label>
+      <img id="signup-photo-preview" class="preview-round hidden" />
+      <button class="btn-primary" id="btn-signup" data-i18n="signup">Criar conta</button>
+      <button class="btn-ghost" id="goto-login" data-i18n="haveAccount">Já tenho conta</button>
+      <p class="auth-error" id="signup-error"></p>
+    </div>
+
+    <div class="lang-switch">
+      <button data-lang="pt">PT</button>
+      <button data-lang="en">EN</button>
+      <button data-lang="es">ES</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== APP PRINCIPAL ===================== -->
+<div id="app-screen" class="screen hidden">
+
+  <!-- Barra superior: busca + menu -->
+  <header class="topbar">
+    <button id="btn-menu" class="icon-btn" aria-label="Menu">☰</button>
+    <div class="search-wrap">
+      <input id="search-input" type="text" data-i18n-ph="searchPlaceholder" placeholder="Buscar por título ou descrição..." />
+      <button id="btn-search-clear" class="icon-btn hidden">✕</button>
+    </div>
+    <button id="btn-profile" class="avatar-btn" aria-label="Perfil">
+      <img id="my-avatar-topbar" src="" alt="" />
+    </button>
+  </header>
+
+  <!-- Mapa -->
+  <div id="map"></div>
+
+  <!-- Resultados de busca -->
+  <div id="search-results" class="panel floating hidden"></div>
+
+  <!-- Botão flutuante: tirar foto -->
+  <button id="btn-take-photo" class="fab" data-i18n-title="takePhoto" title="Registrar foto aqui">
+    <span>📷</span>
+  </button>
+  <input type="file" id="camera-input" accept="image/*" capture="environment" hidden />
+
+  <!-- Menu lateral -->
+  <aside id="side-menu" class="side-menu hidden">
+    <div class="side-menu-header">
+      <img id="my-avatar-menu" class="preview-round small" src="" alt="" />
+      <div>
+        <strong id="my-name-menu"></strong>
+        <div id="my-email-menu" class="muted"></div>
+      </div>
+    </div>
+    <button class="menu-item" id="menu-my-photos" data-i18n="myPhotos">Minhas fotos</button>
+    <button class="menu-item" id="menu-events" data-i18n="events">Eventos no mapa</button>
+    <button class="menu-item" id="menu-chats" data-i18n="messages">Conversas</button>
+    <div class="menu-lang">
+      <span data-i18n="language">Idioma</span>
+      <select id="lang-select">
+        <option value="pt">Português</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
+    <button class="menu-item danger" id="menu-delete-account" data-i18n="deleteAccount">Excluir conta</button>
+    <button class="menu-item" id="menu-logout" data-i18n="logout">Sair</button>
+  </aside>
+  <div id="side-menu-backdrop" class="backdrop hidden"></div>
+
+</div>
+
+<!-- ===================== MODAL: DETALHE DA FOTO ===================== -->
+<div id="modal-photo" class="modal hidden">
+  <div class="modal-card">
+    <button class="modal-close" data-close>✕</button>
+    <img id="photo-detail-img" class="modal-photo" />
+    <div class="modal-body">
+      <h2 id="photo-detail-title"></h2>
+      <p id="photo-detail-desc" class="muted"></p>
+      <div class="photo-meta">
+        <span id="photo-detail-date"></span>
+        <span id="photo-detail-weather"></span>
+      </div>
+      <div class="photo-owner" id="photo-detail-owner"></div>
+
+      <div class="action-row">
+        <button id="btn-like" class="action-btn"><span id="like-icon">🤍</span> <span id="like-count">0</span></button>
+        <button id="btn-comment-toggle" class="action-btn">💬 <span id="comment-count">0</span></button>
+        <button id="btn-share" class="action-btn" data-i18n="share">🔗 Compartilhar</button>
+        <button id="btn-make-event" class="action-btn" data-i18n="promote">📣 Divulgar como evento</button>
+      </div>
+
+      <div id="comments-section" class="comments hidden">
+        <div id="comments-list"></div>
+        <div class="comment-input-row">
+          <input id="comment-input" type="text" data-i18n-ph="writeComment" placeholder="Escreva um comentário..." />
+          <button id="btn-comment-send" data-i18n="send">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: NOVA FOTO (título/descrição) ===================== -->
+<div id="modal-new-photo" class="modal hidden">
+  <div class="modal-card">
+    <button class="modal-close" data-close>✕</button>
+    <img id="new-photo-preview" class="modal-photo" />
+    <div class="modal-body">
+      <input id="new-photo-title" type="text" data-i18n-ph="titlePh" placeholder="Título" />
+      <textarea id="new-photo-desc" data-i18n-ph="descPh" placeholder="Descrição"></textarea>
+      <p class="muted" id="new-photo-meta"></p>
+      <button class="btn-primary" id="btn-publish-photo" data-i18n="publish">Publicar no mapa</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: PERFIL DE OUTRA PESSOA ===================== -->
+<div id="modal-profile" class="modal hidden">
+  <div class="modal-card">
+    <button class="modal-close" data-close>✕</button>
+    <div class="modal-body">
+      <img id="profile-avatar" class="preview-round" />
+      <h2 id="profile-name"></h2>
+      <div class="action-row">
+        <button id="btn-open-chat" class="action-btn" data-i18n="message">💬 Mensagem</button>
+      </div>
+      <h3 data-i18n="recentPhotos">Fotos recentes</h3>
+      <div id="profile-photos" class="thumb-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: CHAT ===================== -->
+<div id="modal-chat" class="modal hidden">
+  <div class="modal-card chat-card">
+    <button class="modal-close" data-close>✕</button>
+    <h2 id="chat-with-name"></h2>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="comment-input-row">
+      <input id="chat-input" type="text" data-i18n-ph="writeMessage" placeholder="Digite uma mensagem..." />
+      <button id="btn-chat-send" data-i18n="send">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: NOVO EVENTO ===================== -->
+<div id="modal-new-event" class="modal hidden">
+  <div class="modal-card">
+    <button class="modal-close" data-close>✕</button>
+    <div class="modal-body">
+      <h2 data-i18n="createEvent">Criar evento para divulgar a foto</h2>
+      <input id="event-title" type="text" data-i18n-ph="eventTitlePh" placeholder="Título do evento" />
+      <textarea id="event-desc" data-i18n-ph="eventDescPh" placeholder="Descrição do evento"></textarea>
+      <button class="btn-primary" id="btn-publish-event" data-i18n="publish">Publicar evento</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script type="module" src="js/i18n.js"></script>
+<script type="module" src="js/firebase-config.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
